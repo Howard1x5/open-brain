@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+*.egg-info/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Environment
+.env
+.env.local
+.env.production
+
+# Models (downloaded at runtime)
+models/
+
+# Data files
+*.json
+!package.json
+
+# Local development files
+CLAUDE.md
+PROJECT_TEMPLATE.md
+*.backup.md
+
+# Claude.ai export data
+claude.ai-data-export/
+
+# Logs
+*.log
