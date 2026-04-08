@@ -24,6 +24,7 @@ models/
 # Data files
 *.json
 !package.json
+!hooks/*.json
 
 # Local development files
 CLAUDE.md
