@@ -15,11 +15,6 @@ v2 changes:
   - Stop hook runs capture AUDIT — checks if memories were created during session
   - PostToolUse also captures significant Bash commands
   - Tracks capture count per session in a temp file for audit
-
-Setup:
-  1. Set OPEN_BRAIN_API_URL env var to your Open Brain REST API endpoint
-  2. Add to ~/.claude/settings.json under hooks.PostToolUse (matcher: "Write|Edit|Bash")
-     and hooks.Stop (matcher: "")
 """
 
 import json
@@ -31,7 +26,7 @@ from pathlib import Path
 from urllib.request import Request, urlopen
 from urllib.error import URLError
 
-# REST endpoint — set via env var or default to localhost
+# REST endpoint — goes through blade Proxmox port forward to Open Brain MCP server
 API_URL = os.getenv("OPEN_BRAIN_API_URL", "http://localhost:8765/api/add")
 
 # Max text length to store per memory
@@ -83,47 +78,61 @@ def get_capture_count(session_id: str) -> int:
 
 
 def send_to_open_brain(text: str, session_id: str = ""):
-    """POST text to Open Brain REST API."""
+    """POST text to Open Brain REST API. 30s timeout, 1 retry on URLError."""
+    import time
     if len(text.strip()) < MIN_TEXT_LENGTH:
         logger.info("Skipping — text too short")
         return False
 
-    try:
-        payload = json.dumps({"text": text}).encode("utf-8")
-        req = Request(API_URL, data=payload, headers={"Content-Type": "application/json"})
-        with urlopen(req, timeout=15) as resp:
-            result = json.loads(resp.read().decode("utf-8"))
-            logger.info(
-                "Stored memory %s (%s): %s",
-                result.get("memory_id"),
-                result.get("category"),
-                result.get("summary", "")[:60],
-            )
-            if session_id:
-                increment_capture_count(session_id)
-            return True
-    except URLError as e:
-        logger.error("Failed to reach Open Brain API: %s", e)
-        return False
-    except Exception as e:
-        logger.error("Unexpected error sending to Open Brain: %s", e)
-        return False
+    payload = json.dumps({"text": text}).encode("utf-8")
+    last_err = None
+    for attempt in (1, 2):
+        try:
+            req = Request(API_URL, data=payload, headers={"Content-Type": "application/json"})
+            with urlopen(req, timeout=30) as resp:
+                result = json.loads(resp.read().decode("utf-8"))
+                logger.info(
+                    "Stored memory %s (%s): %s%s",
+                    result.get("memory_id"),
+                    result.get("category"),
+                    result.get("summary", "")[:60],
+                    " (retry)" if attempt == 2 else "",
+                )
+                if session_id:
+                    increment_capture_count(session_id)
+                return True
+        except URLError as e:
+            last_err = e
+            logger.warning("Attempt %d failed (URLError): %s", attempt, e)
+            if attempt == 1:
+                time.sleep(2)
+                continue
+            logger.error("Failed to reach Open Brain API after retry: %s", e)
+            return False
+        except Exception as e:
+            logger.error("Unexpected error sending to Open Brain: %s", e)
+            return False
+    return False
 
 
 def handle_stop(data: dict):
-    """Handle Stop hook — capture session context and run audit."""
+    """Handle Stop hook — capture session context, run audit, surface count."""
     session_id = data.get("session_id", "")
     message = data.get("last_assistant_message", "")
 
-    # Capture the last assistant message if substantial
     if message and len(message.strip()) >= MIN_TEXT_LENGTH:
         word_count = len(message.split())
         if word_count >= MIN_STOP_WORDS:
             raw_text = f"[source: claude-code session] {truncate(message)}"
             send_to_open_brain(raw_text, session_id)
 
-    # Run capture audit
     audit_capture(session_id)
+
+    count = get_capture_count(session_id)
+    if count > 0:
+        print(f"[OB ✓ {count} memories captured this session]")
+    else:
+        print("[OB ⚠ 0 memories captured this session — check ~/.claude/hooks/open-brain-capture.log]")
 
 
 def audit_capture(session_id: str):

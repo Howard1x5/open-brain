@@ -28,11 +28,6 @@ Flow:
 Output protocol (PreToolUse):
   Exit 0 + stdout "" -> allow
   Exit 2 + stderr message -> block (shown to assistant)
-
-Setup:
-  1. Add to ~/.claude/settings.json under hooks.PreToolUse (matcher: "")
-  2. Customize OB_PATTERNS to match your Open Brain access methods
-  3. Customize the BLOCK message with your actual connection details
 """
 
 import json
@@ -50,7 +45,6 @@ AUDIT_FILE = Path.home() / ".claude" / "hooks" / "ob-audit.log"
 
 # ---------------------------------------------------------------------------
 # Patterns that indicate an Open Brain query or capture
-# Customize these for your setup (SSH hosts, DB IPs, API endpoints, etc.)
 # ---------------------------------------------------------------------------
 OB_PATTERNS = [
     r"open[-_ ]brain",                          # Any reference to "open brain"
@@ -247,9 +241,9 @@ def main():
     reason = (
         "OPEN BRAIN GATE: You must query Open Brain before any other tool calls "
         "this turn. Query via one of:\n"
-        "  1. Direct SQL query to Open Brain PostgreSQL database\n"
+        "  1. Direct DB query: connect to your Open Brain PostgreSQL instance\n"
         "     IMPORTANT: Must include WHERE/ILIKE with terms from the user's request.\n"
-        "  2. Read local memory files (~/.claude/projects/*/memory/*.md)\n"
+        "  2. Read local memory files (project memory/*.md)\n"
         "  3. MCP: search_brain with a targeted query\n"
         "\nEvery turn requires a targeted Open Brain query. No exceptions."
     )
